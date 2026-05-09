@@ -1,0 +1,37 @@
+name: Download Random NCS Song
+
+on:
+  workflow_dispatch:
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Install yt-dlp
+      run: pip install yt-dlp
+    
+    - name: Download random NCS song
+      run: python github_download.py
+    
+    - name: Show song info
+      run: |
+        echo "========================"
+        cat song_title.txt
+        echo "========================"
+        ls -lh ncs_song.m4a
+        echo "Song downloaded successfully on GitHub!"
+    
+    - name: Upload song
+      uses: actions/upload-artifact@v4
+      with:
+        name: ncs-random-song
+        path: |
+          ncs_song.m4a
+          song_title.txt
