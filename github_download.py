@@ -109,20 +109,40 @@ except Exception as e:
     with yt_dlp.YoutubeDL(dl_opts) as ydl:
         ydl.download([url])
 
-# File rename karo
+# Find and rename the downloaded song file
+song_file = None
 for f in os.listdir("."):
-    if f.endswith(".m4a") or f.endswith(".webm"):
-        ext = os.path.splitext(f)[1]
-        os.rename(f, f"ncs_song{ext}")
-        print(f"Downloaded: {f} -> ncs_song{ext}")
+    if f.startswith("song."):
+        song_file = f
         break
-    elif "." in f and not f.endswith(".py") and not f.endswith(".txt") and not f.endswith(".yml"):
-        size = os.path.getsize(f)
-        if size > 100000:
-            ext = os.path.splitext(f)[1]
-            os.rename(f, f"ncs_song{ext}")
-            print(f"Downloaded: {f} -> ncs_song{ext}")
+
+if not song_file:
+    # Try to find by file size
+    for f in os.listdir("."):
+        if f == "ncs_song.m4a" or f == "ncs_song.webm":
+            song_file = f
             break
+        fp = os.path.join(".", f)
+        if os.path.isfile(fp) and not f.endswith(".py") and not f.endswith(".txt") and not f.endswith(".yml"):
+            size = os.path.getsize(fp)
+            if size > 50000:
+                song_file = f
+                break
+
+if song_file and song_file != "ncs_song.m4a":
+    ext = os.path.splitext(song_file)[1]
+    os.rename(song_file, f"ncs_song{ext}")
+    print(f"Renamed: {song_file} -> ncs_song{ext}")
+elif song_file:
+    print(f"File already named: {song_file}")
+
+# List final files
+print("Files in directory:")
+for f in os.listdir("."):
+    fp = os.path.join(".", f)
+    if os.path.isfile(fp):
+        sz = os.path.getsize(fp)
+        print(f"  {f} ({sz} bytes)")
 
 # Save info
 with open("song_title.txt", "w") as f:
