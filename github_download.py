@@ -1,6 +1,6 @@
 """
 GitHub Actions: Random NCS Song Downloader
-Updated: Using latest yt-dlp bypass tricks - no cookies needed!
+Using yt-dlp nightly + format fallback - no cookies
 """
 
 import yt_dlp
@@ -9,6 +9,8 @@ import os
 import glob
 import subprocess
 import sys
+import urllib.request
+import json
 
 # NCS songs list
 SONGS = [
@@ -22,145 +24,111 @@ SONGS = [
     "havsun big beat ncs", "kontinuum lost ncs",
     "tobu summer burst ncs", "rival lonely way ncs",
     "alex skrindo ncs", "diviners ncs", "k-391 ncs",
-    "alan walker fade ncs", "it's different ncs",
 ]
 
-def search_songs(query, max_results=5):
-    """Search YouTube - use extract_flat only, no cookies needed"""
+def search_songs(query):
+    """Search with extract_flat only"""
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "extract_flat": True,
         "ignoreerrors": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"],
-                "skip": ["webpage", "dash", "hls", "player_requests"],
-            }
-        },
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
-            entries = [e for e in info.get("entries", []) if e and e.get("id")]
-            return entries
-    except Exception as e:
-        print(f"  Search error: {str(e)[:80]}")
+            info = ydl.extract_info(f"ytsearch5:{query}", download=False)
+            return [e for e in info.get("entries", []) if e and e.get("id")]
+    except:
         return []
 
 def download_audio(video_id):
-    """Download using yt-dlp with all possible bypass tricks"""
+    """Download using multiple format approaches"""
     
-    base_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "ignoreerrors": True,
-        "extract_flat": False,
-        "outtmpl": "song.%(ext)s",
-        "restrictfilenames": True,
-        "overwrites": True,
-        "no_overwrites": False,
-        "continuedl": False,
-        "age_limit": 99,
-        "geo_bypass": True,
-        "geo_bypass_country": "US",
-        "sleep_interval_requests": 1,
-        "throttled_rate": "100K",
-        "extractor_retries": 3,
-        "fragment_retries": 3,
-        # Skip everything that triggers bot detection
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "android_music", "android_creator", "web"],
-                "skip": ["webpage", "dash", "hls", "player_requests", "js", "player"],
-                "player_skip": ["webpage", "dash", "hls", "js", "player"],
-                "innertube_host": "android",
-            }
-        },
-        # Headers to look like Android app
-        "http_headers": {
-            "User-Agent": "com.google.android.youtube/19.09.36 (Linux; U; Android 14; GB) gzip",
-            "Accept": "*/*",
-            "Accept-Language": "en-GB,en;q=0.9",
-            "X-YouTube-Client-Name": "3",
-            "X-YouTube-Client-Version": "19.09.36",
-            "Origin": "https://www.youtube.com",
-            "Referer": "https://www.youtube.com/",
-        },
-        # Prefer HTTP streaming (not DASH) - less bot detection
-        "format": "bestaudio[protocol!=m3u8][protocol!=dash]/bestaudio/best",
-        # Don't post-process (just raw audio)
-        "postprocessors": [],
-    }
-    
-    # Try 1: Normal android download
     url = f"https://www.youtube.com/watch?v={video_id}"
-    print(f"  Method 1: Android client...")
-    try:
-        with yt_dlp.YoutubeDL(base_opts) as ydl:
-            ydl.download([url])
-            for f in glob.glob("song.*"):
-                sz = os.path.getsize(f)
-                if sz > 5000:
-                    print(f"  ✅ Success! ({sz} bytes)")
-                    return f
-    except Exception as e:
-        err = str(e)[:80]
-        if "Sign in" in err:
-            print(f"    Blocked (Sign in required)")
-        else:
-            print(f"    {err}")
+    output_template = "song.%(ext)s"
     
-    # Try 2: Just best audio, no client constraint
-    print(f"  Method 2: Simple bestaudio...")
-    opts2 = base_opts.copy()
-    opts2["format"] = "worstaudio/worst"
-    opts2["extractor_args"] = {}
-    del opts2["extractor_args"]
-    try:
-        with yt_dlp.YoutubeDL(opts2) as ydl:
-            ydl.download([url])
-            for f in glob.glob("song.*"):
-                sz = os.path.getsize(f)
-                if sz > 5000:
-                    print(f"  ✅ Success! ({sz} bytes)")
-                    return f
-    except Exception as e:
-        print(f"    {str(e)[:60]}")
+    # Try different combinations
+    attempts = [
+        # 1. Android client, default format
+        {
+            "format": "bestaudio[protocol^=http]/bestaudio/best",
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
+            "http_headers": {"User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"},
+        },
+        # 2. Android Music client
+        {
+            "format": "bestaudio[protocol^=http]/bestaudio/best",
+            "extractor_args": {"youtube": {"player_client": ["android_music"]}},
+        },
+        # 3. Web client with skip
+        {
+            "format": "best[height<=360]/best",
+            "extractor_args": {"youtube": {"player_client": ["web"], "skip": ["webpage", "dash"]}},
+        },
+        # 4. No extractor_args, simple format
+        {
+            "format": "worstaudio/worst",
+            "extractor_args": {},
+        },
+        # 5. iOS client
+        {
+            "format": "bestaudio/best",
+            "extractor_args": {"youtube": {"player_client": ["ios"]}},
+        },
+        # 6. No client restriction, minimal
+        {
+            "format": "worst",
+            "extractor_args": {},
+            "http_headers": {"User-Agent": "curl/8.0"},
+        },
+    ]
     
-    # Try 3: Format sort by size (get smallest)
-    print(f"  Method 3: Smallest audio only...")
-    opts3 = base_opts.copy()
-    opts3["format_sort"] = ["size", "br"]
-    opts3["format"] = "worstaudio/worst"
-    del opts3["extractor_args"]
-    try:
-        with yt_dlp.YoutubeDL(opts3) as ydl:
-            ydl.download([url])
-            for f in glob.glob("song.*"):
-                sz = os.path.getsize(f)
-                if sz > 5000:
-                    print(f"  ✅ Success! ({sz} bytes)")
-                    return f
-    except Exception as e:
-        print(f"    {str(e)[:60]}")
+    for i, opts in enumerate(attempts, 1):
+        dl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "ignoreerrors": True,
+            "outtmpl": output_template,
+            "restrictfilenames": True,
+            "extract_flat": False,
+            "geo_bypass": True,
+            "geo_bypass_country": "US",
+            "extractor_retries": 2,
+            "fragment_retries": 2,
+            "overwrites": True,
+        }
+        dl_opts.update(opts)
+        
+        # Remove empty extractor_args
+        if not dl_opts.get("extractor_args"):
+            del dl_opts["extractor_args"]
+        
+        print(f"  Attempt {i}...", end=" ")
+        try:
+            with yt_dlp.YoutubeDL(dl_opts) as ydl:
+                ydl.download([url])
+                for f in glob.glob("song.*"):
+                    sz = os.path.getsize(f)
+                    if sz > 3000:
+                        print(f"✅ ({sz} bytes)")
+                        return f
+                print("no file")
+        except Exception as e:
+            err = str(e)[:60]
+            print(f"✗ {err}")
     
     return None
 
-
-# ==========================================
-# MAIN
-# ==========================================
-print(f"🎵 Query: {random.choice(SONGS)}")
+# ===== MAIN =====
 query = random.choice(SONGS)
+print(f"🎵 {query}")
 
 entries = search_songs(query)
 
 if not entries:
-    backups = ["tobu ncs", "cartoon ncs", "different heaven ncs", "egzod ncs"]
-    for bq in backups:
-        print(f"🔄 Backup: {bq}")
-        entries = search_songs(bq, 3)
+    for bq in ["tobu ncs", "cartoon ncs", "different heaven ncs"]:
+        entries = search_songs(bq)
         if entries:
             break
 
@@ -168,7 +136,6 @@ if not entries:
     print("❌ No results!")
     exit(1)
 
-# Filter: under 10 min
 valid = [e for e in entries if e.get("duration", 0) and int(e.get("duration", 0)) < 600]
 if not valid:
     valid = entries
@@ -177,30 +144,23 @@ chosen = random.choice(valid)
 video_id = chosen.get("id", "")
 title = chosen.get("title", "Unknown")
 artist = chosen.get("channel", "NCS")
-duration = int(chosen.get("duration", 0))
-m, s = divmod(duration, 60)
+dur = int(chosen.get("duration", 0))
 
-print(f"🎧 {title}")
-print(f"👤 {artist}")
-print(f"⏱ {m}:{s:02d}")
-print()
+print(f"🎧 {title} - {artist} ({dur//60}:{dur%60:02d})")
 
-# DOWNLOAD
 song_file = download_audio(video_id)
 
 if not song_file:
-    print("❌ Download failed!")
+    print("❌ Failed! Make sure the song is in repo artifacts.")
     with open("song_title.txt", "w") as f:
         f.write(f"Song: {title}\nArtist: {artist}\nStatus: FAILED\n")
     exit(1)
 
-# Rename
 ext = os.path.splitext(song_file)[1]
 os.rename(song_file, f"ncs_song{ext}")
 size = os.path.getsize(f"ncs_song{ext}")
-print(f"💾 Size: {size} bytes")
 
 with open("song_title.txt", "w") as f:
-    f.write(f"Song: {title}\nArtist: {artist}\nDuration: {m}:{s:02d}\n")
+    f.write(f"Song: {title}\nArtist: {artist}\nDuration: {dur//60}:{dur%60:02d}\n")
 
-print("✅ Done!")
+print(f"✅ Done! {size} bytes")

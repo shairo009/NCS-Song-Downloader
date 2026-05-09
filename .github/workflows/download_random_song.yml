@@ -14,8 +14,13 @@ jobs:
       with:
         python-version: '3.12'
     
-    - name: Install yt-dlp
-      run: pip install yt-dlp
+    - name: Install yt-dlp nightly + ffmpeg
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq ffmpeg
+        # Install LATEST yt-dlp master from GitHub (nightly has latest fixes)
+        pip install --force-reinstall "https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz"
+        yt-dlp --version
     
     - name: Download random NCS song
       run: python github_download.py
@@ -25,13 +30,17 @@ jobs:
         echo "========================"
         cat song_title.txt
         echo "========================"
-        ls -lh ncs_song.m4a
-        echo "Song downloaded successfully on GitHub!"
+        ls -lh ncs_song.* 2>/dev/null || echo "No ncs_song file found"
+        ls -lh song.* 2>/dev/null || echo "No song file found"
+        echo "All files:"
+        ls -la
     
     - name: Upload song
       uses: actions/upload-artifact@v4
       with:
         name: ncs-random-song
         path: |
-          ncs_song.m4a
+          ncs_song.*
+          song.*
           song_title.txt
+        if-no-files-found: warn
