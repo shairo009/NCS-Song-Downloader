@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+*.spec
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Downloads folder is for user's songs, not repo
+README.txt
