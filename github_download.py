@@ -33,33 +33,61 @@ SONGS = [
     "rival lonely way ncs",
 ]
 
+# Search config with Android client to bypass bot detection
+YDL_OPTS = {
+    "quiet": True,
+    "no_warnings": True,
+    "extract_flat": True,
+    "extractor_args": {"youtube": {"player_client": ["android"]}},
+    "ignoreerrors": True,
+}
+
+def search_youtube(query):
+    try:
+        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+            info = ydl.extract_info(f"ytsearch5:{query}", download=False)
+            return [e for e in info.get("entries", []) if e and e.get("id")]
+    except Exception as e:
+        print(f"Search error: {e}")
+        return []
+
 # Random song select karo
 query = random.choice(SONGS)
 print(f"Selected: {query}")
 
-# Search karo on YouTube - Android client se (bypasses bot detection)
-ydl_opts = {
-    "quiet": True,
-    "no_warnings": True,
-    "extract_flat": True,
-}
-with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-    info = ydl.extract_info(f"ytsearch5:{query}", download=False)
-    entries = [e for e in info.get("entries", []) if e and e.get("id")]
+# Search karo
+entries = search_youtube(query)
 
-    if not entries:
-        print("No results found!")
-        exit(1)
+# Retry with simpler query if no results
+if not entries:
+    parts = query.split()
+    if len(parts) > 1:
+        simpler = parts[0]
+        print(f"No results, trying: {simpler}")
+        entries = search_youtube(simpler)
 
-    # Randomly choose from results
-    chosen = random.choice(entries)
-    url = f"https://youtube.com/watch?v={chosen.get('id', '')}"
-    title = chosen.get("title", "Unknown")
-    artist = chosen.get("channel", "NCS")
-    print(f"Downloading: {title}")
-    print(f"URL: {url}")
+# Retry with backup queries
+if not entries:
+    backups = ["tobu ncs", "cartoon ncs", "different heaven ncs"]
+    for bq in backups:
+        print(f"Trying backup: {bq}")
+        entries = search_youtube(bq)
+        if entries:
+            break
 
-# Download karo - use Android client to bypass restrictions
+if not entries:
+    print("No results found after all retries!")
+    exit(1)
+
+# Randomly choose from results
+chosen = random.choice(entries)
+url = f"https://youtube.com/watch?v={chosen.get('id', '')}"
+title = chosen.get("title", "Unknown")
+artist = chosen.get("channel", "NCS")
+print(f"Downloading: {title}")
+print(f"URL: {url}")
+
+# Download karo - use Android client
 dl_opts = {
     "format": "bestaudio/best",
     "outtmpl": "song.%(ext)s",
@@ -71,29 +99,29 @@ dl_opts = {
     "ignoreerrors": True,
 }
 
-with yt_dlp.YoutubeDL(dl_opts) as ydl_dl:
-    try:
-        ydl_dl.download([url])
-    except Exception as e:
-        print(f"First attempt failed: {e}")
-        print("Trying with web client...")
-        dl_opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
-        with yt_dlp.YoutubeDL(dl_opts) as ydl_dl2:
-            ydl_dl2.download([url])
+try:
+    with yt_dlp.YoutubeDL(dl_opts) as ydl:
+        ydl.download([url])
+except Exception as e:
+    print(f"Android client failed: {e}")
+    print("Trying web client...")
+    dl_opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
+    with yt_dlp.YoutubeDL(dl_opts) as ydl:
+        ydl.download([url])
 
 # File rename karo
 for f in os.listdir("."):
     if f.endswith(".m4a") or f.endswith(".webm"):
-        base = os.path.splitext(f)[0]
         ext = os.path.splitext(f)[1]
         os.rename(f, f"ncs_song{ext}")
         print(f"Downloaded: {f} -> ncs_song{ext}")
         break
     elif "." in f and not f.endswith(".py") and not f.endswith(".txt") and not f.endswith(".yml"):
         size = os.path.getsize(f)
-        if size > 100000:  # > 100KB = real audio file
-            os.rename(f, f"ncs_song{os.path.splitext(f)[1]}")
-            print(f"Downloaded: {f} -> ncs_song{os.path.splitext(f)[1]}")
+        if size > 100000:
+            ext = os.path.splitext(f)[1]
+            os.rename(f, f"ncs_song{ext}")
+            print(f"Downloaded: {f} -> ncs_song{ext}")
             break
 
 # Save info
